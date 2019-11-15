@@ -1,4 +1,30 @@
+k.matrix <- function(X = X, kernel.type = c("linear","nonhompolynom", "Gaussian", 
+                                              "Laplacian", "sigmoid"),
+                     kernel.degree = 2, kernel.RBF.sigma = 1, sigmoid.c = 0){
+  
+   kernel.type <- match.arg(kernel.type, c("linear","nonhompolynom", "Gaussian", 
+                                          "Laplacian", "sigmoid"), several.ok = FALSE)
 
+  if (kernel.type == "linear"){
+    K  <- X %*% t(X)
+    
+  } else if  (kernel.type == "nonhompolynom"){
+    d  <- kernel.degree
+    K  <- (1 + X %*% t(X))^d
+    
+  } else if (kernel.type == "Gaussian"){
+    K  <- exp(-as.matrix(dist(X)^2/kernel.RBF.sigma))
+    
+  } else if  (kernel.type == "Laplacian"){
+    K  <- exp(-as.matrix(dist(X)/kernel.RBF.sigma))
+    
+  } else if  (kernel.type == "sigmoid"){
+    K  <- tanh(1/ncol(X)*(X %*% t(X)) + sigmoid.c)
+  }
+  return(K)
+}
+  
+ 
 #' Weighted Ridge Regresssion
 #' Performs Weighted ridge regression.
 
