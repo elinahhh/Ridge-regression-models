@@ -1,0 +1,136 @@
+stdize <- function(X = X,  center = TRUE, scale = TRUE){
+  meanX <- NULL
+  stdX <- NULL
+  if (center){
+    meanX <- colMeans(X)
+    X     <- X - outer(rep(1, nrow(X)), meanX)
+  }
+  if (scale) {
+    stdX <- apply(X, 2, sd)
+    X     <- X / outer(rep(1, nrow(X)), stdX)
+  }
+  result <- (list(X = X, meanX = meanX, stdX = stdX, center = center, scale = scale))
+  return(result)
+}
+
+
+## Ridge Regression Model 1: calculate intercept by setting the first element in penalty matrix as 0
+
+ridge <- function(y = y, X = X,lambda = 10^seq(-8, 8, length.out = 100), intercept = TRUE, 
+                  center = TRUE, scale = TRUE){
+  s <- stdize(X, center = center, scale = scale)
+  X <- s$X
+  meanX <- s$meanX
+  stdX <- s$stdX
+  if (intercept) X <- cbind(rep(1,nrow(X)), X)
+ 
+  betahat <- matrix(NA, nrow = ncol(X), ncol = length(lambda))
+  rownames(betahat) <- colnames(X)
+  yhat <- matrix(NA, nrow = nrow(X), ncol = length(lambda))
+  
+  # ridge regression
+  for (i in 1:length(lambda)){
+    lambdaM <- diag(lambda[i], ncol(X)) #construct a penalty matrix
+    if (intercept) {lambdaM[1,1] <- 0} # The intercept should not be penalized
+    betahat[,i] <-  solve(t(X) %*% X + lambdaM) %*% t(X) %*% y
+    yhat[,i] <- X %*% betahat[,i]
+  }
+  
+  result <- (list(yhat = yhat, betahat = betahat, meanX = meanX, stdX = stdX,
+                  intercept = intercept, center = center, scale = scale))
+  class(result) <- "ridge"
+  return(result)
+}
+
+## Predictions M2
+predict.ols <- function(res, newX){
+    if (!is.null(res$meanX)) newX <- newX - outer(rep(1, nrow(newX)), res$meanX)
+    if (!is.null(res$stdX))  newX <- newX / outer(rep(1, nrow(newX)), res$stdX)
+    if (res$intercept) newX <- cbind(rep(1, nrow(newX)), newX)
+  # prediction
+  yhat <- newX %*% res$betahat
+  return(yhat)
+}
+
+
+
+
+## Ridge Regression Model 2: calculate intercept by the expected value when all predictors are 0 (by standardization).
+
+#' Ridge Regresssion Method 2 for Intercept
+#' Performs ridge regression.
+ridge2 <- function(y = y, X = X, lambda = 10^seq(-8, 8, length.out = 100), 
+                   intercept = TRUE, center = TRUE, scale = TRUE){
+  s <- stdize(X, center = center, scale = scale)
+  X <- s$X
+  meanX <- s$meanX
+  stdX <- s$stdX
+  const <- 0
+  if (intercept) const <- mean(y)
+  betahat <- matrix(NA, nrow = ncol(X), ncol = length(lambda))
+  yhat <- matrix(NA, nrow = nrow(X), ncol = length(lambda))
+  
+  for (i in 1:length(lambda)){
+    betahat[,i] <-  solve(t(X) %*% X + diag(lambda[i], ncol(X))) %*% t(X) %*% (y - const)
+    yhat[,i] <- X %*% betahat[,i] + const
+  }
+  rownames(betahat) <- colnames(X)
+  result <- (list(yhat = yhat, betahat = betahat, constant = const, meanX = meanX, stdX = stdX,
+                  intercept = intercept, center = center, scale = scale))
+  class(result) <- "ridge"
+  
+  return(result)
+}
+
+#' Ridge Regression Prediction Method 2
+#' Does out-of-sample prediction for ridge regression
+
+ predict.ridge2 <- function(res, newX){
+    
+    # center and scale 
+    if (!is.null(res$meanX)) newX <- newX - outer(rep(1, nrow(newX)), res$meanX)
+    if (!is.null(res$stdX))  newX <- newX / outer(rep(1, nrow(newX)), res$stdX)
+    
+    betahat <- res$betahat
+    # ridge regression prediction for each lambda
+    yhat <- newX %*% betahat + res$constant
+    
+    return(yhat)
+ }
+ 
+ 
+ 
+ ## Cross-validation Based on Ridge Regression Model 2
+ cv.ridge <- function(y = y, X = X, intercept = TRUE, 
+                     lambda = 10^seq(-8, 8, length.out = 100), k.folds = 10,
+                     center = TRUE, scale = TRUE, seed = 2019){
+  s <- stdize(X, center = center, scale = scale)
+  X <- s$X
+  meanX <- s$meanX
+  stdX <- s$stdX
+  
+  set.seed(seed)
+  ind  <- sort(runif(nrow(X)), index.return = TRUE)$ix # Find random permutation of values 1:n
+  fold <- rep(1:k.folds, ceiling(nrow(X)/k.folds))[ind] # Vector of permuted fold numbers .
+  
+  yhatu <- matrix(NA, nrow = nrow(X), ncol = length(lambda))
+  rmse <- matrix(NA, nrow = k.folds, ncol = length(lambda))
+  
+  # Ridge regression
+  for (k in 1:k.folds) {
+    indu <- (fold == k)    # Logical vector containing for the holdout sample
+    res <- ridge2(y = y[!indu], X = X[!indu, ,drop = FALSE], lambda = lambda, 
+                   intercept = intercept, center = FALSE, scale = FALSE)
+    yhatu[indu, ] <- predict.ridge2(res, X[indu,])
+  }  
+
+  rmseu <- (colSums((outer(y, rep(1, length(lambda))) - yhatu)^2)/length(y))^.5  
+  # optimal lambda
+  lambda.min <- lambda[which.min(rmseu)]
+  
+  result <- (list(yhatu = yhatu, rmseu = rmseu, lambda.min = lambda.min, 
+                  min.rmseu = min(rmseu), fold = fold, call = match.call()))
+  class(result) <- "cv.ridge"
+  return(result)
+}
+ 
